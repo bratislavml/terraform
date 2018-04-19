@@ -3,20 +3,11 @@ package terraform
 import (
 	"fmt"
 
+	"github.com/hashicorp/terraform/tfdiags"
+
 	"github.com/hashicorp/terraform/config"
 	"github.com/mitchellh/mapstructure"
 )
-
-// EvalValidateError is the error structure returned if there were
-// validation errors.
-type EvalValidateError struct {
-	Warnings []string
-	Errors   []error
-}
-
-func (e *EvalValidateError) Error() string {
-	return fmt.Sprintf("Warnings: %s. Errors: %s", e.Warnings, e.Errors)
-}
 
 // EvalValidateCount is an EvalNode implementation that validates
 // the count of a resource.
@@ -27,11 +18,11 @@ type EvalValidateCount struct {
 // TODO: test
 func (n *EvalValidateCount) Eval(ctx EvalContext) (interface{}, error) {
 	var count int
-	var errs []error
+	var diags tfdiags.Diagnostics
+
 	var err error
 	if _, err := ctx.Interpolate(n.Resource.RawCount, nil); err != nil {
-		errs = append(errs, fmt.Errorf(
-			"Failed to interpolate count: %s", err))
+		diags = diags.Append(err)
 		goto RETURN
 	}
 
@@ -46,17 +37,11 @@ func (n *EvalValidateCount) Eval(ctx EvalContext) (interface{}, error) {
 	err = nil
 
 	if count < 0 {
-		errs = append(errs, fmt.Errorf(
-			"Count is less than zero: %d", count))
+		diags = diags.Append(fmt.Errorf("Count is less than zero: %d", count))
 	}
 
 RETURN:
-	if len(errs) != 0 {
-		err = &EvalValidateError{
-			Errors: errs,
-		}
-	}
-	return nil, err
+	return nil, diags.NonFatalErr()
 }
 
 // EvalValidateProvider is an EvalNode implementation that validates
@@ -75,14 +60,21 @@ func (n *EvalValidateProvider) Eval(ctx EvalContext) (interface{}, error) {
 		return nil, nil
 	}
 
-	return nil, &EvalValidateError{
-		Warnings: warns,
-		Errors:   errs,
+	// FIXME: Once provider.Validate itself returns diagnostics, just
+	// return diags.NonFatalErr() immediately here.
+	var diags tfdiags.Diagnostics
+	for _, warn := range warns {
+		diags = diags.Append(tfdiags.SimpleWarning(warn))
 	}
+	for _, err := range errs {
+		diags = diags.Append(err)
+	}
+
+	return nil, diags.NonFatalErr()
 }
 
 // EvalValidateProvisioner is an EvalNode implementation that validates
-// the configuration of a resource.
+// the configuration of a provisioner belonging to a resource.
 type EvalValidateProvisioner struct {
 	Provisioner *ResourceProvisioner
 	Config      **ResourceConfig
@@ -111,14 +103,17 @@ func (n *EvalValidateProvisioner) Eval(ctx EvalContext) (interface{}, error) {
 		errs = append(errs, e...)
 	}
 
-	if len(warns) == 0 && len(errs) == 0 {
-		return nil, nil
+	// FIXME: Once the above functions themselves return diagnostics, just
+	// return diags.NonFatalErr() immediately here.
+	var diags tfdiags.Diagnostics
+	for _, warn := range warns {
+		diags = diags.Append(tfdiags.SimpleWarning(warn))
+	}
+	for _, err := range errs {
+		diags = diags.Append(err)
 	}
 
-	return nil, &EvalValidateError{
-		Warnings: warns,
-		Errors:   errs,
-	}
+	return nil, diags.NonFatalErr()
 }
 
 func (n *EvalValidateProvisioner) validateConnConfig(connConfig *ResourceConfig) (warns []string, errs []error) {

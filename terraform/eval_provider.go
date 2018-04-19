@@ -3,6 +3,7 @@ package terraform
 import (
 	"fmt"
 
+	"github.com/hashicorp/hcl2/hcl"
 	"github.com/hashicorp/terraform/config"
 )
 
@@ -10,8 +11,8 @@ import (
 // merged with parents and inputs on top of what is configured in the file.
 type EvalBuildProviderConfig struct {
 	Provider string
-	Config   **ResourceConfig
-	Output   **ResourceConfig
+	Config   *hcl.Body
+	Output   *hcl.Body
 }
 
 func (n *EvalBuildProviderConfig) Eval(ctx EvalContext) (interface{}, error) {
